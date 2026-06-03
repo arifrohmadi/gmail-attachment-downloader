@@ -1,0 +1,17 @@
+{
+  "name": "gmail-attachment-downloader",
+  "version": "1.0.0",
+  "description": "Download attachments from Gmail emails filtered by subject prefix",
+  "main": "download-attachments.js",
+  "scripts": {
+    "start": "node download-attachments.js",
+    "download": "node download-attachments.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "googleapis": "^140.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
