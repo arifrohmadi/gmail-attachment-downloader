@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gmail Attachment Downloader (by Prefix)</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#111827; --accent:#3b82f6;
+    --accent2:#22c55e; --text:#e2e8f0; --muted:#94a3b8; --border:#334155;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:linear-gradient(135deg,#0f172a,#1e293b); color:var(--text);
+    min-height:100vh; padding:24px;
+  }
+  .wrap{max-width:960px; margin:0 auto;}
+  h1{font-size:22px; margin-bottom:4px;}
+  .sub{color:var(--muted); margin-bottom:24px; font-size:14px;}
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:20px; margin-bottom:20px;
+  }
+  .card h2{font-size:15px; margin:0 0 12px 0; color:#93c5fd;}
+  label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px;}
+  input[type=text]{
+    width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
+    background:var(--panel2); color:var(--text); font-size:14px; margin-bottom:14px;
+  }
+  input[type=text]:focus{outline:none; border-color:var(--accent);}
+  .row{display:flex; gap:12px; flex-wrap:wrap;}
+  .row > div{flex:1; min-width:200px;}
+  button{
+    background:var(--accent); color:#fff; border:none; padding:10px 18px;
+    border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;
+    transition:opacity .15s;
+  }
+  button:hover{opacity:.9;}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+  button.secondary{background:#374151;}
+  button.green{background:var(--accent2);}
+  #status{
+    font-size:13px; color:var(--muted); margin-top:10px; min-height:18px;
+    white-space:pre-wrap;
+  }
+  table{width:100%; border-collapse:collapse; margin-top:14px; font-size:13px;}
+  th,td{padding:8px 10px; border-bottom:1px solid var(--border); text-align:left;}
+  th{color:var(--muted); font-weight:600;}
+  th.sortable{cursor:pointer; user-select:none; white-space:nowrap;}
+  th.sortable:hover{color:var(--text);}
+  th.sortable .sort-arrow{display:inline-block; width:10px; font-size:11px; color:var(--accent);}
+  tr:hover{background:rgba(255,255,255,0.03);}
+  .badge{
+    display:inline-block; background:#1d4ed8; color:#fff; font-size:11px;
+    padding:2px 8px; border-radius:999px; margin-left:6px;
+  }
+  .empty{color:var(--muted); font-style:italic; padding:12px 0;}
+  .toolbar{display:flex; justify-content:space-between; align-items:center; margin-top:10px; flex-wrap:wrap; gap:8px;}
+  .hint{font-size:12px; color:var(--muted); line-height:1.5;}
+  a.file-link{color:#60a5fa; text-decoration:none;}
+  a.file-link:hover{text-decoration:underline;}
+  .step{color:#93c5fd; font-weight:600;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📎 Gmail Attachment Downloader</h1>
+  <div class="sub">Download attachment Gmail berdasarkan prefix nama file (mis. <code>DAA_T1</code>, <code>PWB_A_T2</code>), berjalan 100% di browser Anda.</div>
+
+  <div class="card">
+    <h2><span class="step">1.</span> Konfigurasi OAuth Client ID</h2>
+    <div class="hint" style="margin-bottom:12px;">
+      Anda perlu membuat OAuth Client ID sendiri di Google Cloud Console (gratis, sekali setup).
+      Klik <b>"Cara Membuat Client ID"</b> di bawah untuk panduan lengkap.
+    </div>
+    <label>Google OAuth Client ID</label>
+    <input type="text" id="clientId" placeholder="xxxxxxxxxx.apps.googleusercontent.com">
+    <div class="row">
+      <div><button id="btnAuth">🔐 Hubungkan Akun Gmail</button></div>
+      <div><button class="secondary" onclick="toggleGuide()">📘 Cara Membuat Client ID</button></div>
+      <div><button class="secondary" id="btnClearSaved" onclick="clearSavedClientId()">🗑️ Hapus Client ID Tersimpan</button></div>
+    </div>
+    <div class="hint" id="savedHint" style="margin-top:8px;"></div>
+    <div id="guide" style="display:none; margin-top:16px; font-size:13px; line-height:1.7; color:var(--muted); border-top:1px solid var(--border); padding-top:14px;">
+      1. Buka <a class="file-link" href="https://console.cloud.google.com/" target="_blank">console.cloud.google.com</a> → buat project baru (atau pilih yang sudah ada).<br>
+      2. Buka menu <b>APIs & Services → Library</b>, cari <b>Gmail API</b>, klik <b>Enable</b>.<br>
+      3. Buka <b>APIs & Services → OAuth consent screen</b>, pilih <b>External</b>, isi nama app & email, simpan. Tambahkan diri Anda sendiri di <b>Test users</b>.<br>
+      4. Buka <b>APIs & Services → Credentials → Create Credentials → OAuth client ID</b>.<br>
+      5. Pilih <b>Application type: Web application</b>.<br>
+      6. Di <b>Authorized JavaScript origins</b>, tambahkan alamat tempat file HTML ini dibuka, misalnya:<br>
+      &nbsp;&nbsp;- <code>http://localhost:5500</code> (jika pakai Live Server), atau<br>
+      &nbsp;&nbsp;- alamat domain hosting Anda (harus https, kecuali localhost).<br>
+      <b>Catatan:</b> membuka file langsung via <code>file://</code> tidak didukung Google OAuth. Gunakan extension "Live Server" di VS Code, atau jalankan <code>python -m http.server</code> lalu buka <code>http://localhost:8000</code>.<br>
+      7. Copy <b>Client ID</b> yang dihasilkan, tempel ke kolom di atas.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2.</span> Filter Pencarian</h2>
+    <div class="row">
+      <div>
+        <label>Prefix nama file attachment (wajib)</label>
+        <input type="text" id="prefix" placeholder="contoh: DAA_T1  atau  PWB_A_T2">
+      </div>
+      <div>
+        <label>Filter tambahan Gmail (opsional)</label>
+        <input type="text" id="extraQuery" placeholder="contoh: from:dosen@kampus.ac.id after:2024/01/01">
+      </div>
+    </div>
+    <div class="row" style="align-items:center; margin-bottom:4px;">
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:0; cursor:pointer;">
+        <input type="checkbox" id="dedupToggle" style="width:auto; margin:0;">
+        <span>Jika ada nama file sama, ambil hanya 1 (versi/email terbaru)</span>
+      </label>
+    </div>
+    <button id="btnSearch" disabled>🔍 Cari Attachment</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none;">
+    <h2><span class="step">3.</span> Hasil Pencarian</h2>
+    <div class="toolbar">
+      <div class="hint" id="resultCount"></div>
+      <div>
+        <button class="secondary" onclick="selectAll(true)">Pilih Semua</button>
+        <button class="secondary" onclick="selectAll(false)">Batal Semua</button>
+        <button class="green" id="btnDownloadZip">⬇️ Download Terpilih (.zip)</button>
+      </div>
+    </div>
+    <div class="hint" id="dedupInfo" style="margin-top:6px;"></div>
+    <table id="resultTable">
+      <thead>
+        <tr>
+          <th></th>
+          <th class="sortable" data-sort="no">No <span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort="filename">Nama File <span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort="subject">Subjek Email <span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort="date">Tanggal <span class="sort-arrow"></span></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="resultBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const SCOPES = "https://www.googleapis.com/auth/gmail.readonly";
+const STORAGE_KEY_CLIENT_ID = "gmailAttDownloader_clientId";
+let tokenClient = null;
+let accessToken = null;
+let gapiInited = false;
+let foundAttachments = []; // {messageId, attachmentId, filename, subject, date, dateRaw, size}
+let lastDuplicateNames = []; // [{filename, count}] populated when dedup toggle is used
+let sortKey = null;   // 'no' | 'filename' | 'subject' | 'date'
+let sortDir = 1;      // 1 = ascending, -1 = descending
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#resultTable th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if(sortKey === key){
+        sortDir = -sortDir;
+      }else{
+        sortKey = key;
+        sortDir = 1;
+      }
+      renderResults();
+    });
+  });
+});
+
+function toggleGuide(){
+  const g = document.getElementById('guide');
+  g.style.display = g.style.display === 'none' ? 'block' : 'none';
+}
+
+function loadSavedClientId(){
+  try{
+    const saved = localStorage.getItem(STORAGE_KEY_CLIENT_ID);
+    if(saved){
+      document.getElementById('clientId').value = saved;
+      document.getElementById('savedHint').innerText = '💾 Client ID tersimpan dimuat otomatis. Klik "Hubungkan Akun Gmail" untuk login.';
+    }
+  }catch(e){
+    console.warn('Tidak bisa membaca localStorage:', e);
+  }
+}
+
+function saveClientId(clientId){
+  try{
+    localStorage.setItem(STORAGE_KEY_CLIENT_ID, clientId);
+    document.getElementById('savedHint').innerText = '💾 Client ID disimpan di browser ini untuk pemakaian berikutnya.';
+  }catch(e){
+    console.warn('Tidak bisa menyimpan ke localStorage:', e);
+  }
+}
+
+function clearSavedClientId(){
+  try{
+    localStorage.removeItem(STORAGE_KEY_CLIENT_ID);
+    document.getElementById('savedHint').innerText = 'Client ID tersimpan telah dihapus.';
+  }catch(e){
+    console.warn('Tidak bisa menghapus localStorage:', e);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadSavedClientId);
+
+function setStatus(msg){
+  document.getElementById('status').innerText = msg;
+}
+
+function gapiLoad(){
+  return new Promise((resolve) => {
+    gapi.load('client', async () => {
+      await gapi.client.init({});
+      await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest');
+      gapiInited = true;
+      resolve();
+    });
+  });
+}
+
+document.getElementById('btnAuth').addEventListener('click', async () => {
+  const clientId = document.getElementById('clientId').value.trim();
+  if(!clientId){
+    alert('Isi Client ID terlebih dahulu.');
+    return;
+  }
+  setStatus('Menyiapkan koneksi ke Google...');
+  if(!gapiInited) await gapiLoad();
+
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: SCOPES,
+    callback: (resp) => {
+      if(resp.error){
+        setStatus('Gagal login: ' + resp.error);
+        return;
+      }
+      accessToken = resp.access_token;
+      gapi.client.setToken({ access_token: accessToken });
+      saveClientId(clientId);
+      setStatus('✅ Berhasil terhubung ke Gmail. Silakan isi prefix dan klik "Cari Attachment".');
+      document.getElementById('btnSearch').disabled = false;
+    }
+  });
+  tokenClient.requestAccessToken({ prompt: '' });
+});
+
+document.getElementById('btnSearch').addEventListener('click', searchAttachments);
+
+async function listAllMessageIds(query){
+  let ids = [];
+  let pageToken = undefined;
+  do{
+    const resp = await gapi.client.gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: 100,
+      pageToken
+    });
+    const msgs = resp.result.messages || [];
+    ids = ids.concat(msgs.map(m => m.id));
+    pageToken = resp.result.nextPageToken;
+    setStatus(`Mengambil daftar email... (${ids.length} email ditemukan sejauh ini)`);
+  } while(pageToken);
+  return ids;
+}
+
+function walkParts(parts, messageId, prefix, subject, dateStr, dateRaw, results){
+  if(!parts) return;
+  for(const part of parts){
+    if(part.filename && part.filename.length > 0){
+      if(part.filename.toLowerCase().startsWith(prefix.toLowerCase())){
+        results.push({
+          messageId,
+          attachmentId: part.body.attachmentId,
+          filename: part.filename,
+          subject,
+          date: dateStr,
+          dateRaw: dateRaw,
+          size: part.body.size || 0
+        });
+      }
+    }
+    if(part.parts){
+      walkParts(part.parts, messageId, prefix, subject, dateStr, dateRaw, results);
+    }
+  }
+}
+
+async function searchAttachments(){
+  const prefix = document.getElementById('prefix').value.trim();
+  const extraQuery = document.getElementById('extraQuery').value.trim();
+  if(!prefix){
+    alert('Isi prefix nama file terlebih dahulu, contoh: DAA_T1');
+    return;
+  }
+
+  document.getElementById('btnSearch').disabled = true;
+  document.getElementById('resultsCard').style.display = 'none';
+  foundAttachments = [];
+
+  const query = ['has:attachment', extraQuery].filter(Boolean).join(' ');
+  setStatus('Mencari email dengan attachment...');
+
+  try{
+    const ids = await listAllMessageIds(query);
+    setStatus(`Ditemukan ${ids.length} email. Memeriksa nama attachment satu per satu...`);
+
+    let checked = 0;
+    for(const id of ids){
+      const msgResp = await gapi.client.gmail.users.messages.get({
+        userId: 'me',
+        id: id,
+        format: 'full'
+      });
+      const msg = msgResp.result;
+      const headers = msg.payload.headers || [];
+      const subject = (headers.find(h => h.name === 'Subject') || {}).value || '(tanpa subjek)';
+      const dateHeader = (headers.find(h => h.name === 'Date') || {}).value || '';
+      const dateObj = dateHeader ? new Date(dateHeader) : null;
+      const dateStr = dateObj ? dateObj.toLocaleDateString('id-ID') : '';
+      const dateRaw = dateObj ? dateObj.getTime() : 0;
+
+      walkParts(msg.payload.parts, id, prefix, subject, dateStr, dateRaw, foundAttachments);
+
+      checked++;
+      if(checked % 5 === 0 || checked === ids.length){
+        setStatus(`Memeriksa email... (${checked}/${ids.length}), attachment cocok: ${foundAttachments.length}`);
+      }
+    }
+
+    let dedupNote = '';
+    lastDuplicateNames = [];
+    const dedupEnabled = document.getElementById('dedupToggle').checked;
+    if(dedupEnabled){
+      const beforeCount = foundAttachments.length;
+      const { result, duplicateNames } = dedupeByFilenameKeepLatest(foundAttachments);
+      foundAttachments = result;
+      lastDuplicateNames = duplicateNames;
+      const removed = beforeCount - foundAttachments.length;
+      if(removed > 0){
+        dedupNote = ` (${removed} duplikat nama file dibuang, disisakan versi terbaru)`;
+      }
+    }
+
+    renderResults();
+    setStatus(`✅ Selesai. Ditemukan ${foundAttachments.length} attachment dengan prefix "${prefix}".${dedupNote}`);
+  }catch(err){
+    console.error(err);
+    setStatus('❌ Terjadi error: ' + (err.result?.error?.message || err.message || err));
+  }finally{
+    document.getElementById('btnSearch').disabled = false;
+  }
+}
+
+function dedupeByFilenameKeepLatest(list){
+  const byName = new Map(); // filenameKey (lowercase) -> attachment (currently the newest seen)
+  const countByName = new Map(); // filenameKey (lowercase) -> occurrence count
+  const displayNameByKey = new Map(); // filenameKey -> a representative display name (first seen)
+  for(const att of list){
+    const key = att.filename.toLowerCase();
+    countByName.set(key, (countByName.get(key) || 0) + 1);
+    if(!displayNameByKey.has(key)) displayNameByKey.set(key, att.filename);
+    const existing = byName.get(key);
+    if(!existing || (att.dateRaw || 0) > (existing.dateRaw || 0)){
+      byName.set(key, att);
+    }
+  }
+  const duplicateNames = Array.from(countByName.entries())
+    .filter(([, count]) => count > 1)
+    .map(([key, count]) => ({ filename: displayNameByKey.get(key), count }));
+  return { result: Array.from(byName.values()), duplicateNames };
+}
+
+function getSortedIndices(){
+  // Pair each attachment with its original index (used for checkbox/download refs)
+  const indices = foundAttachments.map((_, idx) => idx);
+
+  if(!sortKey || sortKey === 'no'){
+    // 'no' with descending just reverses the original found order
+    if(sortKey === 'no' && sortDir === -1) indices.reverse();
+    return indices;
+  }
+
+  indices.sort((a, b) => {
+    const attA = foundAttachments[a];
+    const attB = foundAttachments[b];
+    let cmp = 0;
+    if(sortKey === 'filename'){
+      cmp = attA.filename.localeCompare(attB.filename, 'id', { sensitivity: 'base' });
+    }else if(sortKey === 'subject'){
+      cmp = attA.subject.localeCompare(attB.subject, 'id', { sensitivity: 'base' });
+    }else if(sortKey === 'date'){
+      cmp = (attA.dateRaw || 0) - (attB.dateRaw || 0);
+    }
+    return cmp * sortDir;
+  });
+  return indices;
+}
+
+function updateSortArrows(){
+  document.querySelectorAll('#resultTable th.sortable').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if(th.dataset.sort === sortKey){
+      arrow.innerText = sortDir === 1 ? '▲' : '▼';
+    }else{
+      arrow.innerText = '';
+    }
+  });
+}
+
+function renderResults(){
+  const card = document.getElementById('resultsCard');
+  const body = document.getElementById('resultBody');
+  const count = document.getElementById('resultCount');
+  const dedupInfo = document.getElementById('dedupInfo');
+  body.innerHTML = '';
+
+  if(lastDuplicateNames.length > 0){
+    const items = lastDuplicateNames
+      .map(d => `${escapeHtml(d.filename)} <span class="badge">${d.count}x</span>`)
+      .join(', ');
+    dedupInfo.innerHTML = `⚠️ Nama file duplikat ditemukan (hanya versi terbaru yang ditampilkan): ${items}`;
+  }else{
+    dedupInfo.innerHTML = '';
+  }
+
+  if(foundAttachments.length === 0){
+    card.style.display = 'block';
+    count.innerText = 'Tidak ada attachment yang cocok dengan prefix tersebut.';
+    updateSortArrows();
+    return;
+  }
+
+  card.style.display = 'block';
+  count.innerText = `${foundAttachments.length} attachment ditemukan.`;
+
+  const orderedIndices = getSortedIndices();
+
+  orderedIndices.forEach((idx, rowNum) => {
+    const att = foundAttachments[idx];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="checkbox" class="rowChk" data-idx="${idx}" checked></td>
+      <td>${rowNum + 1}</td>
+      <td>${escapeHtml(att.filename)}</td>
+      <td>${escapeHtml(att.subject)}</td>
+      <td>${att.date}</td>
+      <td><button class="secondary" onclick="downloadSingle(${idx})">Download</button></td>
+    `;
+    body.appendChild(tr);
+  });
+
+  updateSortArrows();
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.innerText = str;
+  return div.innerHTML;
+}
+
+function selectAll(state){
+  document.querySelectorAll('.rowChk').forEach(chk => chk.checked = state);
+}
+
+function base64UrlToBlob(data, mime){
+  const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0; i<binary.length; i++){
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime || 'application/octet-stream' });
+}
+
+async function fetchAttachmentBlob(att){
+  const resp = await gapi.client.gmail.users.messages.attachments.get({
+    userId: 'me',
+    messageId: att.messageId,
+    id: att.attachmentId
+  });
+  return base64UrlToBlob(resp.result.data);
+}
+
+async function downloadSingle(idx){
+  const att = foundAttachments[idx];
+  setStatus(`Mengunduh ${att.filename}...`);
+  const blob = await fetchAttachmentBlob(att);
+  triggerDownload(blob, att.filename);
+  setStatus(`✅ ${att.filename} berhasil diunduh.`);
+}
+
+function triggerDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btnDownloadZip').addEventListener('click', async () => {
+  const checked = Array.from(document.querySelectorAll('.rowChk:checked')).map(c => parseInt(c.dataset.idx));
+  if(checked.length === 0){
+    alert('Pilih minimal satu attachment terlebih dahulu.');
+    return;
+  }
+
+  const zip = new JSZip();
+  let done = 0;
+  for(const idx of checked){
+    const att = foundAttachments[idx];
+    setStatus(`Menyiapkan zip... (${done+1}/${checked.length}) ${att.filename}`);
+    const blob = await fetchAttachmentBlob(att);
+    zip.file(att.filename, blob);
+    done++;
+  }
+
+  setStatus('Membuat file zip...');
+  const content = await zip.generateAsync({ type: 'blob' });
+  triggerDownload(content, `attachments_${document.getElementById('prefix').value.trim()}.zip`);
+  setStatus(`✅ Berhasil mengunduh ${checked.length} attachment dalam bentuk zip.`);
+});
+</script>
+</body>
+</html>
